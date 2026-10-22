@@ -11,6 +11,7 @@
 #include <string.h>
 
 #include "ember_gfx.h"
+#include "gfx_internal.h"
 
 #define W 97     /* deliberately not a multiple of 4 */
 #define H 61
@@ -180,6 +181,48 @@ static void test_open_close(void) {
     CHECK(strcmp(gfx_backend_name(), "none") == 0, "backend still set after close");
 }
 
+static void test_input(void) {
+    CHECK(gfx_poll_click() == 0, "queue not empty at start");
+    gfx_input_move(5, 6);
+    CHECK(gfx_mouse_x() == 5 && gfx_mouse_y() == 6, "move not tracked");
+
+    gfx_input_button(0, 1, 5, 6);
+    CHECK(gfx_mouse_down(0) == 1, "left button not reported held");
+    CHECK(gfx_mouse_down(1) == 0, "right button wrongly held");
+    CHECK(gfx_poll_click() == 1, "press not queued");
+    CHECK(gfx_click_button() == 0 && gfx_click_x() == 5 && gfx_click_y() == 6,
+          "click details wrong: %lld %lld %lld", (long long)gfx_click_button(),
+          (long long)gfx_click_x(), (long long)gfx_click_y());
+
+    gfx_input_button(0, 0, 5, 6);         /* release: held clears, no new click */
+    CHECK(gfx_mouse_down(0) == 0, "release did not clear held state");
+    CHECK(gfx_poll_click() == 0, "release produced a click");
+
+    gfx_input_button(1, 1, 60, 2);        /* right click, pointer off to the side */
+    CHECK(gfx_poll_click() == 1 && gfx_click_button() == 1 && gfx_click_x() == 60,
+          "right click wrong");
+
+    /* Queue order: presses come out oldest first. */
+    gfx_input_button(2, 1, 1, 1);
+    gfx_input_button(0, 1, 2, 2);
+    CHECK(gfx_poll_click() == 1 && gfx_click_button() == 2, "middle click out of order");
+    CHECK(gfx_poll_click() == 1 && gfx_click_button() == 0 && gfx_click_x() == 2,
+          "second click out of order");
+    CHECK(gfx_poll_click() == 0, "queue not empty after draining");
+
+    /* Overflow: the queue holds 64 presses and drops the rest. */
+    for (int i = 0; i < 100; i++) {
+        gfx_input_button(0, 1, i, 0);
+        gfx_input_button(0, 0, i, 0);
+    }
+    int taken = 0;
+    while (gfx_poll_click() == 1) taken++;
+    CHECK(taken == 64, "queue held %d presses, want 64", taken);
+
+    gfx_input_button(7, 1, 0, 0);         /* unknown button is ignored */
+    CHECK(gfx_poll_click() == 0 && gfx_mouse_down(7) == 0, "unknown button not ignored");
+}
+
 int main(void) {
     setenv("GFX_BACKEND", "null", 1);
     test_open_close();
@@ -191,6 +234,7 @@ int main(void) {
     test_circle_edges();
     test_line_properties();
     test_dirty_region();
+    test_input();
     gfx_close();
     if (failures) {
         fprintf(stderr, "test_core: %d failure(s)\n", failures);

@@ -7,6 +7,8 @@ on:
 jobs:
   test:
     runs-on: ubuntu-24.04
+    env:
+      EMBER_REPO: ember
     steps:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
@@ -19,12 +21,12 @@ jobs:
       - name: install tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y nasm xvfb libx11-dev libxext-dev pkg-config \
+          sudo apt-get install -y nasm xvfb libx11-dev libxext-dev libxtst-dev pkg-config \
             gcc-mingw-w64-x86-64 binutils-mingw-w64-x86-64
       - name: headless tests
         run: make test EMBER_REPO=ember
       - name: X11 tests (24-bit, shared memory and XPutImage fallback)
-        run: xvfb-run -a make test-x11
+        run: xvfb-run -a make test-x11 e2e-click
       - name: X11 tests (16-bit display, format conversion)
         run: xvfb-run -a -s "-screen 0 800x600x16" make test-x11-16
       - name: Windows backend compiles

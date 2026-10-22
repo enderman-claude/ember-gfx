@@ -23,4 +23,9 @@ int gfx_win32_open(gfx_backend *be, int64_t w, int64_t h);
 /* X11 window id, for tests that send it events. 0 when X11 is not active. */
 unsigned long gfx_x11_window_id(void);
 
+/* Input entry points. Backends call these from their event handling.
+ * button: 0 = left, 1 = right, 2 = middle. Coordinates are canvas pixels. */
+void gfx_input_move(int64_t x, int64_t y);
+void gfx_input_button(int button, int pressed, int64_t x, int64_t y);
+
 #endif

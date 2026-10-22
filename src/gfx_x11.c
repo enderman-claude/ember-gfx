@@ -85,15 +85,40 @@ static void x11_present(const uint32_t *fb, int64_t fb_width, int64_t x, int64_t
     XSync(dpy, False);
 }
 
+/* X button numbers: 1 = left, 2 = middle, 3 = right. 4-7 are the scroll wheel. */
+static int x_button_to_gfx(unsigned int b) {
+    switch (b) {
+        case 1: return 0;
+        case 2: return 2;
+        case 3: return 1;
+        default: return -1;
+    }
+}
+
 static int x11_pump(void) {
     while (XPending(dpy)) {
         XEvent ev;
         XNextEvent(dpy, &ev);
-        if (ev.type == ClientMessage && (Atom)ev.xclient.data.l[0] == wm_delete) {
-            closed_flag = 1;
-        }
-        if (ev.type == DestroyNotify) {
-            closed_flag = 1;
+        switch (ev.type) {
+            case ClientMessage:
+                if ((Atom)ev.xclient.data.l[0] == wm_delete) closed_flag = 1;
+                break;
+            case DestroyNotify:
+                closed_flag = 1;
+                break;
+            case MotionNotify:
+                gfx_input_move(ev.xmotion.x, ev.xmotion.y);
+                break;
+            case ButtonPress:
+            case ButtonRelease: {
+                int b = x_button_to_gfx(ev.xbutton.button);
+                if (b >= 0) {
+                    gfx_input_button(b, ev.type == ButtonPress, ev.xbutton.x, ev.xbutton.y);
+                }
+                break;
+            }
+            default:
+                break;
         }
     }
     return closed_flag;
@@ -145,7 +170,8 @@ int gfx_x11_open(gfx_backend *be, int64_t w, int64_t h) {
     XStoreName(dpy, win, "Ember graphics");
     wm_delete = XInternAtom(dpy, "WM_DELETE_WINDOW", False);
     XSetWMProtocols(dpy, win, &wm_delete, 1);
-    XSelectInput(dpy, win, StructureNotifyMask);
+    XSelectInput(dpy, win, StructureNotifyMask | ButtonPressMask | ButtonReleaseMask |
+                           PointerMotionMask);
     gc = XCreateGC(dpy, win, 0, NULL);
     XMapWindow(dpy, win);
 

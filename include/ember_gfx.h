@@ -46,6 +46,23 @@ void gfx_line(int64_t x0, int64_t y0, int64_t x1, int64_t y1);
 /* Reads back a pixel. Returns -1 if (x, y) is outside the canvas. */
 int64_t gfx_get_pixel(int64_t x, int64_t y);
 
+/* Mouse input. Coordinates are canvas pixels, and may be negative or past the edge
+ * when the pointer is outside the window. Buttons: 0 = left, 1 = right, 2 = middle.
+ *
+ * Presses are queued. gfx_poll_click() takes the oldest press and makes it the
+ * "current click", which gfx_click_button/x/y then describe. The queue holds 64
+ * presses; any further presses are dropped until the program polls. Input is read
+ * during gfx_present, so poll after presenting. */
+int64_t gfx_mouse_x(void);
+int64_t gfx_mouse_y(void);
+/* 1 while the button is held down, 0 otherwise. */
+int64_t gfx_mouse_down(int64_t button);
+/* 1 if a press was taken from the queue, 0 if the queue was empty. */
+int64_t gfx_poll_click(void);
+int64_t gfx_click_button(void);
+int64_t gfx_click_x(void);
+int64_t gfx_click_y(void);
+
 /* Shows everything drawn since the last present, and processes window events. */
 void gfx_present(void);
 /* 1 once the user has closed the window. */

@@ -11,6 +11,7 @@
 
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
+#include <X11/extensions/XTest.h>
 
 #include "ember_gfx.h"
 #include "gfx_internal.h"
@@ -120,6 +121,33 @@ int main(void) {
     gfx_sleep_ms(200);
     gfx_present();
     CHECK(gfx_closed() == 1, "WM_DELETE_WINDOW not seen");
+
+    /* Real pointer input through the XTest extension. The window is at (0,0). */
+    XTestFakeMotionEvent(reader, -1, 20, 30, CurrentTime);
+    XTestFakeButtonEvent(reader, 1, True, CurrentTime);
+    XTestFakeButtonEvent(reader, 1, False, CurrentTime);
+    XTestFakeMotionEvent(reader, -1, 40, 10, CurrentTime);
+    XTestFakeButtonEvent(reader, 3, True, CurrentTime);
+    XTestFakeButtonEvent(reader, 3, False, CurrentTime);
+    XTestFakeMotionEvent(reader, -1, 200, 200, CurrentTime);      /* outside the window */
+    XTestFakeButtonEvent(reader, 1, True, CurrentTime);
+    XTestFakeButtonEvent(reader, 1, False, CurrentTime);
+    XFlush(reader);
+    gfx_sleep_ms(300);
+    gfx_present();
+    gfx_present();
+
+    CHECK(gfx_poll_click() == 1, "left click inside the window not received");
+    CHECK(gfx_click_button() == 0 && gfx_click_x() == 20 && gfx_click_y() == 30,
+          "left click at (%lld,%lld) button %lld, want (20,30) button 0",
+          (long long)gfx_click_x(), (long long)gfx_click_y(), (long long)gfx_click_button());
+    CHECK(gfx_poll_click() == 1, "right click not received");
+    CHECK(gfx_click_button() == 1 && gfx_click_x() == 40 && gfx_click_y() == 10,
+          "right click at (%lld,%lld) button %lld, want (40,10) button 1",
+          (long long)gfx_click_x(), (long long)gfx_click_y(), (long long)gfx_click_button());
+    CHECK(gfx_poll_click() == 0, "click outside the window was received");
+    CHECK(gfx_mouse_x() == 40 && gfx_mouse_y() == 10, "mouse position %lld,%lld, want 40,10",
+          (long long)gfx_mouse_x(), (long long)gfx_mouse_y());
 
     XDestroyImage(shot);
     XCloseDisplay(reader);

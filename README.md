@@ -45,6 +45,32 @@ ember build demo/animate.em -o animate \
 The `--link=` form is needed for flags such as `-lX11`, because the argument parser would
 otherwise read them as options. `make demo` does this for you.
 
+## Mouse input
+
+```python
+extern def gfx_poll_click() -> i64
+extern def gfx_click_button() -> i64
+extern def gfx_click_x() -> i64
+extern def gfx_click_y() -> i64
+extern def gfx_mouse_x() -> i64
+extern def gfx_mouse_y() -> i64
+extern def gfx_mouse_down(button: i64) -> i64
+```
+
+Clicks are queued as they happen. `gfx_poll_click()` takes the oldest one, and
+`gfx_click_button/x/y()` describe it: button 0 is left, 1 is right, 2 is middle. Use
+`gfx_mouse_down(b)` to check whether a button is held, and `gfx_mouse_x/y()` for the
+pointer position. Input is read during `gfx_present`. The queue holds 64 presses.
+
+`demo/click_test.em` is a mouse test: each click leaves a coloured dot, holding the left
+button paints white, and bars count the clicks.
+
+```
+make click-test         # Linux: build/click_test (needs Ember and the X11 libraries)
+make click-test-exe     # Windows: build/click_test.exe (needs MinGW)
+xvfb-run -a make e2e-click   # Linux end-to-end: real pointer clicks, checked on screen
+```
+
 ## Using it from C
 
 ```c
@@ -131,8 +157,11 @@ What the tests cover:
   Also checks circle edges, line endpoints and lengths, and dirty-rectangle sizes.
 - `selftest.em`: an Ember program, run headless, whose output must match `demo/selftest.expect`.
 - `test_x11`: draws on a real X server and reads the screen back through a second
-  connection. Checks pixel values, partial updates, and the window-close protocol. Runs on
-  the shared-memory path, the fallback path, and a 16-bit display.
+  connection. Checks pixel values, partial updates, the window-close protocol, and mouse
+  input sent with the XTest extension. Runs on the shared-memory path, the fallback path,
+  and a 16-bit display.
+- `e2e-click`: runs `click_test` on Xvfb, sends real pointer clicks, and checks the dots
+  and bars on screen.
 
 ## Limits
 

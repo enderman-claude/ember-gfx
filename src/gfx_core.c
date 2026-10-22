@@ -15,6 +15,10 @@
 #include <string.h>
 #include <time.h>
 
+#if defined(_WIN32)
+#include <windows.h>
+#endif
+
 #include "gfx_internal.h"
 
 #if defined(__SSE2__)
@@ -23,6 +27,8 @@
 
 #define GFX_MAX_SIZE 8192
 #define GFX_MAX_RADIUS (1LL << 20)   /* larger radii are clamped; see gfx_circle */
+#define GFX_CLICK_QUEUE 64
+#define GFX_BUTTONS 3
 
 static struct {
     int open;
@@ -34,6 +40,13 @@ static struct {
     int closed;
     int64_t pixels_presented;
     gfx_backend be;
+
+    /* input */
+    int64_t mouse_x, mouse_y;
+    int down[GFX_BUTTONS];
+    struct { int button; int64_t x, y; } queue[GFX_CLICK_QUEUE];
+    int q_head, q_count;
+    struct { int button; int64_t x, y; } current;
 } G;
 
 static void mark_dirty(int64_t x0, int64_t y0, int64_t x1, int64_t y1) {
@@ -231,10 +244,58 @@ void gfx_present(void) {
 int64_t gfx_closed(void) { return G.closed; }
 int64_t gfx_pixels_presented(void) { return G.pixels_presented; }
 
+/* ---- input -------------------------------------------------------------- */
+
+void gfx_input_move(int64_t x, int64_t y) {
+    G.mouse_x = x;
+    G.mouse_y = y;
+}
+
+void gfx_input_button(int button, int pressed, int64_t x, int64_t y) {
+    if (button < 0 || button >= GFX_BUTTONS) return;
+    G.mouse_x = x;
+    G.mouse_y = y;
+    G.down[button] = pressed ? 1 : 0;
+    if (pressed) {
+        if (G.q_count == GFX_CLICK_QUEUE) return;          /* queue full: drop the press */
+        int slot = (G.q_head + G.q_count) % GFX_CLICK_QUEUE;
+        G.queue[slot].button = button;
+        G.queue[slot].x = x;
+        G.queue[slot].y = y;
+        G.q_count++;
+    }
+}
+
+int64_t gfx_mouse_x(void) { return G.mouse_x; }
+int64_t gfx_mouse_y(void) { return G.mouse_y; }
+
+int64_t gfx_mouse_down(int64_t button) {
+    if (button < 0 || button >= GFX_BUTTONS) return 0;
+    return G.down[button];
+}
+
+int64_t gfx_poll_click(void) {
+    if (G.q_count == 0) return 0;
+    G.current.button = G.queue[G.q_head].button;
+    G.current.x = G.queue[G.q_head].x;
+    G.current.y = G.queue[G.q_head].y;
+    G.q_head = (G.q_head + 1) % GFX_CLICK_QUEUE;
+    G.q_count--;
+    return 1;
+}
+
+int64_t gfx_click_button(void) { return G.current.button; }
+int64_t gfx_click_x(void) { return G.current.x; }
+int64_t gfx_click_y(void) { return G.current.y; }
+
 void gfx_sleep_ms(int64_t ms) {
     if (ms <= 0) return;
+#if defined(_WIN32)
+    Sleep((DWORD)ms);
+#else
     struct timespec ts;
     ts.tv_sec = ms / 1000;
     ts.tv_nsec = (ms % 1000) * 1000000L;
     nanosleep(&ts, NULL);
+#endif
 }

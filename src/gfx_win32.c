@@ -10,6 +10,10 @@ static HWND hwnd;
 static BITMAPINFO bmi;
 static int closed_flag;
 
+/* Mouse coordinates arrive as signed 16-bit values in the client area. */
+static int64_t lp_x(LPARAM lp) { return (int64_t)(short)LOWORD(lp); }
+static int64_t lp_y(LPARAM lp) { return (int64_t)(short)HIWORD(lp); }
+
 static LRESULT CALLBACK gfx_wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
         case WM_CLOSE:
@@ -19,6 +23,15 @@ static LRESULT CALLBACK gfx_wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
             closed_flag = 1;
             PostQuitMessage(0);
             return 0;
+        case WM_MOUSEMOVE:
+            gfx_input_move(lp_x(lp), lp_y(lp));
+            return 0;
+        case WM_LBUTTONDOWN: gfx_input_button(0, 1, lp_x(lp), lp_y(lp)); return 0;
+        case WM_LBUTTONUP:   gfx_input_button(0, 0, lp_x(lp), lp_y(lp)); return 0;
+        case WM_RBUTTONDOWN: gfx_input_button(1, 1, lp_x(lp), lp_y(lp)); return 0;
+        case WM_RBUTTONUP:   gfx_input_button(1, 0, lp_x(lp), lp_y(lp)); return 0;
+        case WM_MBUTTONDOWN: gfx_input_button(2, 1, lp_x(lp), lp_y(lp)); return 0;
+        case WM_MBUTTONUP:   gfx_input_button(2, 0, lp_x(lp), lp_y(lp)); return 0;
         default:
             return DefWindowProcA(h, msg, wp, lp);
     }
