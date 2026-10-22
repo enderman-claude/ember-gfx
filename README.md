@@ -7,6 +7,8 @@ It works from C directly, and from Ember programs through `extern def`.
   to the canvas. Every function takes `int64_t`, so Ember's `i64` values pass straight through.
 - **Pluggable backends**: X11 on Linux (with MIT-SHM), Win32 on Windows, and a headless
   backend for tests and servers.
+- **x86-64 and AArch64**: the same source builds for both. SSE2 and NEON fast paths are
+  selected at compile time, with a scalar fallback everywhere else.
 - **Device-specific fast paths**: dirty-rectangle presentation on every backend, shared
   memory and direct row copies on X11, and a single `StretchDIBits` call on Win32.
 
@@ -133,8 +135,8 @@ big-endian servers, are converted per pixel. The 16-bit path is tested.
 - **Shared memory** (X11): the image lives in shared memory, so frames don't go through the
   socket.
 - **Row copy** (X11): one `memcpy` per row in the common pixel format.
-- **SSE2 row fill** (core, x86-64): four pixels per store. A scalar loop handles the tail
-  and other CPUs.
+- **SIMD row fill** (core): four pixels per store, using SSE2 on x86-64 and NEON on AArch64.
+  A scalar loop handles the tail and other CPUs.
 - **Span circles** (core): each row is a single fill, found with an exact integer square root.
 
 ## Building and testing
@@ -145,7 +147,23 @@ make test            # headless tests, plus X11 tests if DISPLAY is set
 xvfb-run -a make test-x11                              # X11 with 24-bit depth
 xvfb-run -a -s "-screen 0 800x600x16" make test-x11-16 # X11 with 16-bit depth
 make win-check       # compile the Windows backend with MinGW (does not run it)
+make arm-check       # compile every source for AArch64 (cross compiler, -Werror)
+make arm-test        # AArch64: headless tests and the Ember self-test (qemu-user on x86-64)
 ```
+
+### AArch64 (ARM64) Linux
+
+The library builds for AArch64 with `make arm-check` and `make arm-test`. The Ember self-test
+is compiled with `--target linux-arm64` and its output is compared with `demo/selftest.expect`.
+
+- On an x86-64 host, install `gcc-aarch64-linux-gnu` and `qemu-user`. `make arm-test` runs
+  the AArch64 programs under `qemu-aarch64`.
+- On an ARM64 host, no emulator is used, and `make arm-test` runs the programs natively.
+- `ARM_CC` selects the compiler and `ARM_SYSROOT` the sysroot used by qemu.
+
+`arm-check` also compiles the X11 backend for AArch64. Running the X11 tests on AArch64 needs
+AArch64 X11 libraries, which the cross toolchain does not include, so the X11 backend is
+compile-checked there but not run.
 
 Requirements: a C11 compiler, `pkg-config`, `libx11-dev` and `libxext-dev` (for X11),
 and the Ember compiler (for the `.em` demos; set `EMBER_REPO` if it is not at `../ember`).

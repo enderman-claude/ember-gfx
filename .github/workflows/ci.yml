@@ -22,7 +22,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y nasm xvfb libx11-dev libxext-dev libxtst-dev pkg-config \
-            gcc-mingw-w64-x86-64 binutils-mingw-w64-x86-64
+            gcc-mingw-w64-x86-64 binutils-mingw-w64-x86-64 gcc-aarch64-linux-gnu qemu-user
       - name: headless tests
         run: make test EMBER_REPO=ember
       - name: X11 tests (24-bit, shared memory and XPutImage fallback)
@@ -31,3 +31,7 @@ jobs:
         run: xvfb-run -a -s "-screen 0 800x600x16" make test-x11-16
       - name: Windows backend compiles
         run: make win-check
+      - name: AArch64 sources compile
+        run: make arm-check EMBER_REPO=ember
+      - name: AArch64 tests under qemu (headless tests and Ember self-test)
+        run: make arm-test EMBER_REPO=ember

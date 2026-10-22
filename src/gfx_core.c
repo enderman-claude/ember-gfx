@@ -5,7 +5,8 @@
  *
  * Optimisations here:
  *   - Dirty rectangle: gfx_present sends only the region changed since the last present.
- *   - SSE2 row fill: 4 pixels per store on x86-64 (scalar fallback elsewhere).
+ *   - SIMD row fill: 4 pixels per store with SSE2 on x86-64 or NEON on AArch64
+ *     (scalar fallback elsewhere).
  *   - Span-based circles: each row is one horizontal fill, not a per-pixel test.
  */
 #define _POSIX_C_SOURCE 200809L
@@ -23,6 +24,8 @@
 
 #if defined(__SSE2__)
 #include <emmintrin.h>
+#elif defined(__aarch64__)
+#include <arm_neon.h>            /* Advanced SIMD is mandatory on AArch64 */
 #endif
 
 #define GFX_MAX_SIZE 8192
@@ -82,6 +85,11 @@ static void fill_span(int64_t y, int64_t x0, int64_t x1, uint32_t c) {
     __m128i v = _mm_set1_epi32((int)c);
     for (; x + 4 <= x1; x += 4) {
         _mm_storeu_si128((__m128i *)(row + x), v);
+    }
+#elif defined(__aarch64__)
+    uint32x4_t v = vdupq_n_u32(c);
+    for (; x + 4 <= x1; x += 4) {
+        vst1q_u32(row + x, v);
     }
 #endif
     for (; x < x1; x++) {
