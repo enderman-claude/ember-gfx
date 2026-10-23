@@ -187,6 +187,12 @@ tests/                 C test suites
 demo/                  Ember programs: self-test and animation
 ```
 
+## Related repos
+
+- [ember](https://github.com/enderman-claude/ember): the compiler that builds the Ember demos. The C library is used through `extern def`.
+- [tesseraOS](https://github.com/enderman-claude/tesseraOS): the OS this library targets. `src/gfx_tesseraos.c` is a stub backend for it.
+- [tesseraOS-teds](https://github.com/enderman-claude/tesseraOS-teds): the display server that the tesseraOS backend will use once it has a framebuffer path.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
