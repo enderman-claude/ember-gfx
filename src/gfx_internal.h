@@ -19,6 +19,8 @@ typedef struct gfx_backend {
 int gfx_null_open(gfx_backend *be, int64_t w, int64_t h);
 int gfx_x11_open(gfx_backend *be, int64_t w, int64_t h);
 int gfx_win32_open(gfx_backend *be, int64_t w, int64_t h);
+/* Stub until tesseraOS has a framebuffer. Always returns 0 for now. */
+int gfx_tesseraos_open(gfx_backend *be, int64_t w, int64_t h);
 
 /* X11 window id, for tests that send it events. 0 when X11 is not active. */
 unsigned long gfx_x11_window_id(void);

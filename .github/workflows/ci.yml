@@ -31,3 +31,5 @@ jobs:
         run: xvfb-run -a -s "-screen 0 800x600x16" make test-x11-16
       - name: Windows backend compiles
         run: make win-check
+      - name: tesseraOS stub compiles
+        run: make tesseraos-check

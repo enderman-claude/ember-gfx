@@ -6,7 +6,8 @@ It works from C directly, and from Ember programs through `extern def`.
 - **Generic API**: canvas, colour, clear, pixel, rectangle, circle and line, all clipped
   to the canvas. Every function takes `int64_t`, so Ember's `i64` values pass straight through.
 - **Pluggable backends**: X11 on Linux (with MIT-SHM), Win32 on Windows, and a headless
-  backend for tests and servers.
+  backend for tests and servers. A tesseraOS backend exists as a stub: it compiles, but
+  reports failure until tesseraOS has a framebuffer, so programs use the headless backend.
 - **Device-specific fast paths**: dirty-rectangle presentation on every backend, shared
   memory and direct row copies on X11, and a single `StretchDIBits` call on Win32.
 

@@ -20,7 +20,7 @@ ifneq ($(X11_LIBS),)
   CFLAGS += $(X11_CFLAGS)
 endif
 
-CORE_SRC := src/gfx_core.c src/gfx_null.c
+CORE_SRC := src/gfx_core.c src/gfx_null.c src/gfx_tesseraos.c
 BUILD    := build
 
 LIB      := $(BUILD)/libember_gfx.a
@@ -102,6 +102,11 @@ $(BUILD)/click_test.exe: demo/click_test.em src/gfx_core.c src/gfx_null.c src/gf
 e2e-click: $(BUILD)/click_test $(BUILD)/click_inject
 	./tests/e2e_click.sh ./$(BUILD)/click_test ./$(BUILD)/click_inject
 
+# tesseraOS: compile-check the stub backend (no display yet, so nothing to run).
+tesseraos-check:
+	$(CC) -std=c11 -Wall -Wextra -Werror -Iinclude -Isrc -c src/gfx_tesseraos.c -o /dev/null
+	@echo "tesseraos-check: tesseraOS stub compiles"
+
 # Windows: compile-check the backend and core with MinGW (does not link or run).
 win-check:
 	x86_64-w64-mingw32-gcc -std=c11 -Wall -Wextra -Werror -Iinclude -Isrc \
@@ -115,4 +120,4 @@ win-check:
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: all test test-x11 test-x11-16 demo win-check click-test click-test-exe e2e-click clean
+.PHONY: all test test-x11 test-x11-16 demo win-check tesseraos-check click-test click-test-exe e2e-click clean

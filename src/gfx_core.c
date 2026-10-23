@@ -126,9 +126,14 @@ int64_t gfx_open(int64_t w, int64_t h) {
     if (force == NULL || strcmp(force, "null") != 0) {
 #if defined(_WIN32)
         ok = gfx_win32_open(&G.be, w, h);
-#elif defined(GFX_HAVE_X11)
+#else
+#if defined(GFX_HAVE_X11)
         if (getenv("DISPLAY") != NULL) {
             ok = gfx_x11_open(&G.be, w, h);
+        }
+#endif
+        if (!ok) {
+            ok = gfx_tesseraos_open(&G.be, w, h);   /* stub: currently always 0 */
         }
 #endif
     }
