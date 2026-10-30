@@ -61,9 +61,16 @@ static void store_pixel(unsigned char *p, uint32_t v) {
     }
 }
 
+/* The last framebuffer presented. An Expose event redraws the canvas from it, because
+ * the X server discards the window contents when another window covers it. */
+static const uint32_t *last_fb;
+static int64_t last_fb_width, canvas_w, canvas_h;
+
 static void x11_present(const uint32_t *fb, int64_t fb_width, int64_t x, int64_t y,
                         int64_t w, int64_t h) {
     if (img == NULL) return;
+    last_fb = fb;
+    last_fb_width = fb_width;
     for (int64_t row = y; row < y + h; row++) {
         unsigned char *dst = (unsigned char *)img->data + row * img->bytes_per_line
                              + x * bytes_per_pixel;
@@ -135,6 +142,15 @@ static int x11_error_handler(Display *d, XErrorEvent *e) {
     return 0;
 }
 
+/* Queues the printable text of a key press (X does the Shift and layout work). */
+static void queue_text(XKeyEvent *key) {
+    char buf[8];
+    int n = XLookupString(key, buf, (int)sizeof buf, NULL, NULL);
+    for (int i = 0; i < n; i++) {
+        gfx_input_char((unsigned char)buf[i]);
+    }
+}
+
 static int x11_pump(void) {
     while (XPending(dpy)) {
         XEvent ev;
@@ -157,6 +173,7 @@ static int x11_pump(void) {
                     if (next.type == KeyPress && next.xkey.keycode == ev.xkey.keycode &&
                         next.xkey.time == ev.xkey.time) {
                         XNextEvent(dpy, &next);
+                        queue_text(&next.xkey);       /* the repeat still types a character */
                         break;
                     }
                 }
@@ -164,10 +181,19 @@ static int x11_pump(void) {
                 if (k >= 0) {
                     gfx_input_key(k, ev.type == KeyPress);
                 }
+                if (ev.type == KeyPress) {
+                    queue_text(&ev.xkey);
+                }
                 break;
             }
             case DestroyNotify:
                 closed_flag = 1;
+                break;
+            case Expose:
+                /* Redraw the whole canvas once the last exposure in a series arrives. */
+                if (ev.xexpose.count == 0 && last_fb != NULL) {
+                    x11_present(last_fb, last_fb_width, 0, 0, canvas_w, canvas_h);
+                }
                 break;
             case MotionNotify:
                 gfx_input_move(ev.xmotion.x, ev.xmotion.y);
@@ -189,6 +215,7 @@ static int x11_pump(void) {
 
 static void x11_close(void) {
     if (dpy == NULL) return;
+    last_fb = NULL;
     if (img != NULL) {
         if (use_shm) {
             XShmDetach(dpy, &shminfo);
@@ -230,12 +257,15 @@ int gfx_x11_open(gfx_backend *be, int64_t w, int64_t h) {
     gmask = vis->green_mask;
     bmask = vis->blue_mask;
 
+    canvas_w = w;
+    canvas_h = h;
+    last_fb = NULL;
     win = XCreateSimpleWindow(dpy, RootWindow(dpy, scr), 0, 0, (unsigned)w, (unsigned)h, 0, 0, 0);
     XStoreName(dpy, win, "Ember graphics");
     wm_delete = XInternAtom(dpy, "WM_DELETE_WINDOW", False);
     XSetWMProtocols(dpy, win, &wm_delete, 1);
     XSelectInput(dpy, win, StructureNotifyMask | ButtonPressMask | ButtonReleaseMask |
-                           PointerMotionMask | KeyPressMask | KeyReleaseMask);
+                           PointerMotionMask | KeyPressMask | KeyReleaseMask | ExposureMask);
     gc = XCreateGC(dpy, win, 0, NULL);
     XMapWindow(dpy, win);
 

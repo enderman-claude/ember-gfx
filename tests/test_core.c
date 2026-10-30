@@ -267,6 +267,23 @@ static void test_keys_and_close(void) {
     CHECK(gfx_close_is_blocked() == 0, "close_blocked not cleared");
 }
 
+static void test_text(void) {
+    /* Printable ASCII is queued in order; control characters and DEL are not. */
+    gfx_input_char('H');
+    gfx_input_char('\n');
+    gfx_input_char(0x7F);
+    gfx_input_char('i');
+    CHECK(gfx_poll_char() == 1 && gfx_char_code() == 'H', "first char is not H");
+    CHECK(gfx_poll_char() == 1 && gfx_char_code() == 'i', "second char is not i");
+    CHECK(gfx_poll_char() == 0, "control characters were queued");
+
+    /* The queue holds 64 characters; extra characters are dropped. */
+    for (int i = 0; i < 70; i++) gfx_input_char('a' + (i % 26));
+    int taken = 0;
+    while (gfx_poll_char()) taken++;
+    CHECK(taken == 64, "char queue held %d, expected 64", taken);
+}
+
 static void test_release_all(void) {
     /* A held button must not stay down when the backend loses the mouse, and no click
      * may be queued for that release. */
@@ -296,6 +313,7 @@ int main(void) {
     test_input();
     test_release_all();
     test_keys_and_close();
+    test_text();
     gfx_close();
     if (failures) {
         fprintf(stderr, "test_core: %d failure(s)\n", failures);
