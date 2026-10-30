@@ -20,6 +20,7 @@
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <X11/extensions/XShm.h>
+#include <X11/keysym.h>
 
 #include "gfx_internal.h"
 
@@ -95,14 +96,76 @@ static int x_button_to_gfx(unsigned int b) {
     }
 }
 
+/* Converts an X keysym to the library's key numbering (Win32 virtual-key codes).
+ * Returns -1 for keys the library does not name. */
+static int keysym_to_gfx(KeySym ks) {
+    if (ks >= XK_a && ks <= XK_z) return (int)(ks - XK_a) + 'A';
+    if (ks >= XK_A && ks <= XK_Z) return (int)ks;
+    if (ks >= XK_0 && ks <= XK_9) return (int)ks;
+    switch (ks) {
+        case XK_BackSpace: return 8;
+        case XK_Tab:       return 9;
+        case XK_Return:    return 13;
+        case XK_Shift_L:   case XK_Shift_R:   return 16;
+        case XK_Control_L: case XK_Control_R: return 17;
+        case XK_Alt_L:     case XK_Alt_R:     return 18;
+        case XK_Escape:    return 27;
+        case XK_space:     return 32;
+        case XK_Left:      return 37;
+        case XK_Up:        return 38;
+        case XK_Right:     return 39;
+        case XK_Down:      return 40;
+        default:           return -1;
+    }
+}
+
+/* If the window is destroyed under us (for example, by another client), drawing to it
+ * fails with BadDrawable or BadWindow. Xlib would exit on that by default. Treat it as
+ * a close instead, and let every other error go to the previous handler. */
+static XErrorHandler prev_error_handler;
+
+static int x11_error_handler(Display *d, XErrorEvent *e) {
+    if (e->error_code == BadWindow || e->error_code == BadDrawable) {
+        closed_flag = 1;
+        return 0;
+    }
+    if (prev_error_handler != NULL) {
+        return prev_error_handler(d, e);
+    }
+    return 0;
+}
+
 static int x11_pump(void) {
     while (XPending(dpy)) {
         XEvent ev;
         XNextEvent(dpy, &ev);
         switch (ev.type) {
             case ClientMessage:
-                if ((Atom)ev.xclient.data.l[0] == wm_delete) closed_flag = 1;
+                if ((Atom)ev.xclient.data.l[0] == wm_delete) {
+                    /* Report the close button, then close unless the program blocked it. */
+                    gfx_input_close_request();
+                    if (!gfx_close_is_blocked()) closed_flag = 1;
+                }
                 break;
+            case KeyPress:
+            case KeyRelease: {
+                /* Auto-repeat arrives as a release followed at the same time by a press.
+                 * Drop both so a held key is a single press. */
+                if (ev.type == KeyRelease && XPending(dpy)) {
+                    XEvent next;
+                    XPeekEvent(dpy, &next);
+                    if (next.type == KeyPress && next.xkey.keycode == ev.xkey.keycode &&
+                        next.xkey.time == ev.xkey.time) {
+                        XNextEvent(dpy, &next);
+                        break;
+                    }
+                }
+                int k = keysym_to_gfx(XLookupKeysym(&ev.xkey, 0));
+                if (k >= 0) {
+                    gfx_input_key(k, ev.type == KeyPress);
+                }
+                break;
+            }
             case DestroyNotify:
                 closed_flag = 1;
                 break;
@@ -153,6 +216,7 @@ unsigned long gfx_x11_window_id(void) {
 int gfx_x11_open(gfx_backend *be, int64_t w, int64_t h) {
     dpy = XOpenDisplay(NULL);
     if (dpy == NULL) return 0;
+    prev_error_handler = XSetErrorHandler(x11_error_handler);
 
     int scr = DefaultScreen(dpy);
     Visual *vis = DefaultVisual(dpy, scr);
@@ -171,7 +235,7 @@ int gfx_x11_open(gfx_backend *be, int64_t w, int64_t h) {
     wm_delete = XInternAtom(dpy, "WM_DELETE_WINDOW", False);
     XSetWMProtocols(dpy, win, &wm_delete, 1);
     XSelectInput(dpy, win, StructureNotifyMask | ButtonPressMask | ButtonReleaseMask |
-                           PointerMotionMask);
+                           PointerMotionMask | KeyPressMask | KeyReleaseMask);
     gc = XCreateGC(dpy, win, 0, NULL);
     XMapWindow(dpy, win);
 

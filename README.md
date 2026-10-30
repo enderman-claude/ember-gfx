@@ -10,8 +10,10 @@ It works from C directly, and from Ember programs through `extern def`.
   reports failure until tesseraOS has a framebuffer, so programs use the headless backend.
 - **x86-64 and AArch64**: the same source builds for both. SSE2 and NEON fast paths are
   selected at compile time, with a scalar fallback everywhere else.
-- **Device-specific fast paths**: dirty-rectangle presentation on every backend, shared
-  memory and direct row copies on X11, and a single `StretchDIBits` call on Win32.
+- **Device-specific fast paths**: dirty-rectangle presentation on X11 (shared memory and
+  direct row copies), and a single full-canvas `StretchDIBits` call on Win32. Windows
+  sends the whole canvas: a partial `StretchDIBits` on the top-down DIB drew rows at the
+  wrong vertical position.
 
 ## Using it from Ember
 
@@ -73,6 +75,43 @@ make click-test         # Linux: build/click_test (needs Ember and the X11 libra
 make click-test-exe     # Windows: build/click_test.exe (needs MinGW)
 xvfb-run -a make e2e-click   # Linux end-to-end: real pointer clicks, checked on screen
 ```
+
+## Keyboard input
+
+```python
+extern def gfx_key_down(key: i64) -> i64
+extern def gfx_poll_key() -> i64
+extern def gfx_key_code() -> i64
+extern def gfx_key_pressed() -> i64
+```
+
+Keys use Win32 virtual-key codes on every backend, so the same code works on Linux and
+Windows. Letters and digits are their uppercase ASCII codes (`'A'` is 65, `'0'` is 48).
+Other keys: Backspace 8, Tab 9, Enter 13, Shift 16, Ctrl 17, Alt 18, Esc 27, Space 32,
+Left 37, Up 38, Right 39, Down 40.
+
+`gfx_key_down(k)` is 1 while a key is held, which suits movement. Presses and releases are
+queued like clicks: `gfx_poll_key()` takes the oldest event, and `gfx_key_code()` and
+`gfx_key_pressed()` (1 = press, 0 = release) describe it. Auto-repeat is not an event.
+
+Text entry (characters after shift and layout) is not provided yet; the codes are physical
+keys, so `'A'` is the key labelled A on a US layout.
+
+## Close button
+
+```python
+extern def gfx_close_requested() -> i64
+extern def gfx_set_close_blocked(on: i64)
+```
+
+Each press of the close button (or Alt+F4 on Windows) is an event. `gfx_close_requested()`
+returns 1 once per request. By default the window then closes by itself. Call
+`gfx_set_close_blocked(1)` to keep it open, so the program can ask the user and call
+`gfx_close()` only when it agrees. `gfx_closed()` is 1 after the window has closed, whether
+the user closed it or the program did.
+
+`demo/keys_test.em` puts both together: arrow keys move a square, each key press adds a
+dot, and the close button asks Y to quit or N to stay.
 
 ## Using it from C
 

@@ -10,15 +10,67 @@ static HWND hwnd;
 static BITMAPINFO bmi;
 static int closed_flag;
 
-/* Mouse coordinates arrive as signed 16-bit values in the client area. */
+/* The canvas is kept so that WM_PAINT can redraw the whole window. Windows asks for a
+ * repaint when the window is uncovered, restored or moved, and those requests do not
+ * come with a dirty rectangle. fb_ptr is the core's framebuffer, which is always up to
+ * date, so repainting from it shows the current picture. */
+static const uint32_t *fb_ptr;
+static int64_t canvas_w, canvas_h;
+
+/* Mouse coordinates arrive as signed 16-bit values in the client area. A drag that
+ * leaves the window gives negative values, so the sign must be kept. */
 static int64_t lp_x(LPARAM lp) { return (int64_t)(short)LOWORD(lp); }
 static int64_t lp_y(LPARAM lp) { return (int64_t)(short)HIWORD(lp); }
 
+/* Holds the mouse while a button is down, so that the release is still seen when the
+ * pointer leaves the window. wp is the MK_* state after the event. */
+static void update_capture(HWND h, WPARAM wp, int pressed) {
+    if (pressed) {
+        SetCapture(h);
+    } else if ((wp & (MK_LBUTTON | MK_RBUTTON | MK_MBUTTON)) == 0) {
+        ReleaseCapture();
+    }
+}
+
+static void paint_canvas(HDC dc) {
+    if (fb_ptr == NULL) {
+        PatBlt(dc, 0, 0, (int)canvas_w, (int)canvas_h, BLACKNESS);
+        return;
+    }
+    StretchDIBits(dc, 0, 0, (int)canvas_w, (int)canvas_h,
+                  0, 0, (int)canvas_w, (int)canvas_h,
+                  fb_ptr, &bmi, DIB_RGB_COLORS, SRCCOPY);
+}
+
 static LRESULT CALLBACK gfx_wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
-        case WM_CLOSE:
-            DestroyWindow(h);
+        case WM_PAINT: {
+            PAINTSTRUCT ps;
+            HDC dc = BeginPaint(h, &ps);
+            paint_canvas(dc);
+            EndPaint(h, &ps);
             return 0;
+        }
+        case WM_CLOSE:
+            /* The close button and Alt+F4 both arrive here. Report the request, then
+             * close unless the program has blocked closing to ask the user first. */
+            gfx_input_close_request();
+            if (!gfx_close_is_blocked()) {
+                DestroyWindow(h);
+            }
+            return 0;
+        case WM_KEYDOWN:
+        case WM_KEYUP:
+            /* wParam is the virtual-key code, which is the library's key numbering.
+             * Repeats are filtered in the core. */
+            gfx_input_key((int)(wp & 0xFF), msg == WM_KEYDOWN);
+            return 0;
+        case WM_SYSKEYDOWN:
+        case WM_SYSKEYUP:
+            /* Alt and F10 combinations are system keys. Record them, then pass them on
+             * so Alt+F4 still closes the window. */
+            gfx_input_key((int)(wp & 0xFF), msg == WM_SYSKEYDOWN);
+            return DefWindowProcA(h, msg, wp, lp);
         case WM_DESTROY:
             closed_flag = 1;
             PostQuitMessage(0);
@@ -26,12 +78,29 @@ static LRESULT CALLBACK gfx_wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         case WM_MOUSEMOVE:
             gfx_input_move(lp_x(lp), lp_y(lp));
             return 0;
-        case WM_LBUTTONDOWN: gfx_input_button(0, 1, lp_x(lp), lp_y(lp)); return 0;
-        case WM_LBUTTONUP:   gfx_input_button(0, 0, lp_x(lp), lp_y(lp)); return 0;
-        case WM_RBUTTONDOWN: gfx_input_button(1, 1, lp_x(lp), lp_y(lp)); return 0;
-        case WM_RBUTTONUP:   gfx_input_button(1, 0, lp_x(lp), lp_y(lp)); return 0;
-        case WM_MBUTTONDOWN: gfx_input_button(2, 1, lp_x(lp), lp_y(lp)); return 0;
-        case WM_MBUTTONUP:   gfx_input_button(2, 0, lp_x(lp), lp_y(lp)); return 0;
+        case WM_LBUTTONDOWN:
+            update_capture(h, wp, 1);
+            gfx_input_button(0, 1, lp_x(lp), lp_y(lp)); return 0;
+        case WM_LBUTTONUP:
+            gfx_input_button(0, 0, lp_x(lp), lp_y(lp));
+            update_capture(h, wp, 0); return 0;
+        case WM_RBUTTONDOWN:
+            update_capture(h, wp, 1);
+            gfx_input_button(1, 1, lp_x(lp), lp_y(lp)); return 0;
+        case WM_RBUTTONUP:
+            gfx_input_button(1, 0, lp_x(lp), lp_y(lp));
+            update_capture(h, wp, 0); return 0;
+        case WM_MBUTTONDOWN:
+            update_capture(h, wp, 1);
+            gfx_input_button(2, 1, lp_x(lp), lp_y(lp)); return 0;
+        case WM_MBUTTONUP:
+            gfx_input_button(2, 0, lp_x(lp), lp_y(lp));
+            update_capture(h, wp, 0); return 0;
+        case WM_CAPTURECHANGED:
+        case WM_KILLFOCUS:
+            /* Another window took the mouse or focus, so the release may never arrive. */
+            gfx_input_release_all();
+            return 0;
         default:
             return DefWindowProcA(h, msg, wp, lp);
     }
@@ -39,12 +108,19 @@ static LRESULT CALLBACK gfx_wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
 
 static void win32_present(const uint32_t *fb, int64_t fb_width, int64_t x, int64_t y,
                           int64_t w, int64_t h) {
+    /* The DIB is canvas_w pixels wide, so fb_width must match it. */
+    (void)fb_width;
+    (void)x; (void)y; (void)w; (void)h;
+    fb_ptr = fb;
+    /* The whole canvas is sent, not just the dirty rectangle. StretchDIBits with a
+     * non-zero source origin on this top-down DIB draws the rows at the wrong
+     * vertical position (observed: a block at y=160 appears at y=150, and a block
+     * that ends at the bottom edge is cut short). Using origin (0,0) avoids that. */
     HDC dc = GetDC(hwnd);
-    StretchDIBits(dc, (int)x, (int)y, (int)w, (int)h,
-                  (int)x, (int)y, (int)w, (int)h,
+    StretchDIBits(dc, 0, 0, (int)canvas_w, (int)canvas_h,
+                  0, 0, (int)canvas_w, (int)canvas_h,
                   fb, &bmi, DIB_RGB_COLORS, SRCCOPY);
     ReleaseDC(hwnd, dc);
-    (void)fb_width;
 }
 
 static int win32_pump(void) {
@@ -58,6 +134,8 @@ static int win32_pump(void) {
 }
 
 static void win32_close(void) {
+    /* gfx_core frees the framebuffer after this returns, so drop the pointer first. */
+    fb_ptr = NULL;
     if (hwnd != NULL) {
         DestroyWindow(hwnd);
         hwnd = NULL;
@@ -76,13 +154,20 @@ int gfx_win32_open(gfx_backend *be, int64_t w, int64_t h) {
         /* Registered already by an earlier open in this process: continue. */
     }
 
+    /* The window is not resizable. The canvas is a fixed w x h buffer and the mouse is
+     * reported in client pixels, so a resized client area would leave part of the window
+     * unpainted and mouse positions would not match canvas pixels. */
+    const DWORD style = WS_OVERLAPPEDWINDOW & ~(WS_THICKFRAME | WS_MAXIMIZEBOX);
     RECT r = {0, 0, (LONG)w, (LONG)h};
-    AdjustWindowRect(&r, WS_OVERLAPPEDWINDOW, FALSE);
-    hwnd = CreateWindowExA(0, "EmberGfx", "Ember graphics", WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+    AdjustWindowRect(&r, style, FALSE);
+    hwnd = CreateWindowExA(0, "EmberGfx", "Ember graphics", style | WS_VISIBLE,
                            CW_USEDEFAULT, CW_USEDEFAULT, r.right - r.left, r.bottom - r.top,
                            NULL, NULL, inst, NULL);
     if (hwnd == NULL) return 0;
 
+    canvas_w = w;
+    canvas_h = h;
+    fb_ptr = NULL;
     memset(&bmi, 0, sizeof bmi);
     bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
     bmi.bmiHeader.biWidth = (LONG)w;

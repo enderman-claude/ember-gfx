@@ -33,6 +33,9 @@
 #define GFX_CLICK_QUEUE 64
 #define GFX_BUTTONS 3
 
+#define GFX_KEYS 256
+#define GFX_KEY_QUEUE 64
+
 static struct {
     int open;
     int64_t w, h;
@@ -50,6 +53,15 @@ static struct {
     struct { int button; int64_t x, y; } queue[GFX_CLICK_QUEUE];
     int q_head, q_count;
     struct { int button; int64_t x, y; } current;
+
+    int key_down[GFX_KEYS];
+    struct { int key; int pressed; } kqueue[GFX_KEY_QUEUE];
+    int kq_head, kq_count;
+    struct { int key; int pressed; } kcurrent;
+
+    /* close button */
+    int close_requested;
+    int close_blocked;
 } G;
 
 static void mark_dirty(int64_t x0, int64_t y0, int64_t x1, int64_t y1) {
@@ -155,6 +167,10 @@ int64_t gfx_open(int64_t w, int64_t h) {
     G.dx0 = 0; G.dy0 = 0; G.dx1 = w; G.dy1 = h;
     G.closed = 0;
     G.pixels_presented = 0;
+    G.close_requested = 0;
+    G.close_blocked = 0;
+    G.kq_head = G.kq_count = 0;
+    memset(G.key_down, 0, sizeof G.key_down);
     return ok;
 }
 
@@ -166,6 +182,7 @@ void gfx_close(void) {
     free(G.fb);
     G.fb = NULL;
     G.open = 0;
+    G.closed = 1;                     /* gfx_closed() is 1 after the program closes too */
 }
 
 int64_t gfx_width(void) { return G.w; }
@@ -277,6 +294,66 @@ void gfx_input_button(int button, int pressed, int64_t x, int64_t y) {
         G.queue[slot].y = y;
         G.q_count++;
     }
+}
+
+/* Called by a backend when it stops receiving button events (for example, the window
+ * lost the mouse or focus during a drag). Clears the held state so a button whose
+ * release was never seen does not stay down. No click is queued. */
+void gfx_input_release_all(void) {
+    for (int b = 0; b < GFX_BUTTONS; b++) {
+        G.down[b] = 0;
+    }
+    for (int k = 0; k < GFX_KEYS; k++) {
+        G.key_down[k] = 0;
+    }
+}
+
+void gfx_input_key(int key, int pressed) {
+    if (key < 0 || key >= GFX_KEYS) return;
+    int p = pressed ? 1 : 0;
+    /* Auto-repeat sends the same state again. Only a change is an event. */
+    if (G.key_down[key] == p) return;
+    G.key_down[key] = p;
+    if (G.kq_count == GFX_KEY_QUEUE) return;          /* queue full: drop the event */
+    int slot = (G.kq_head + G.kq_count) % GFX_KEY_QUEUE;
+    G.kqueue[slot].key = key;
+    G.kqueue[slot].pressed = p;
+    G.kq_count++;
+}
+
+void gfx_input_close_request(void) {
+    G.close_requested = 1;
+}
+
+int gfx_close_is_blocked(void) {
+    return G.close_blocked;
+}
+
+int64_t gfx_key_down(int64_t key) {
+    if (key < 0 || key >= GFX_KEYS) return 0;
+    return G.key_down[key];
+}
+
+int64_t gfx_poll_key(void) {
+    if (G.kq_count == 0) return 0;
+    G.kcurrent.key = G.kqueue[G.kq_head].key;
+    G.kcurrent.pressed = G.kqueue[G.kq_head].pressed;
+    G.kq_head = (G.kq_head + 1) % GFX_KEY_QUEUE;
+    G.kq_count--;
+    return 1;
+}
+
+int64_t gfx_key_code(void) { return G.kcurrent.key; }
+int64_t gfx_key_pressed(void) { return G.kcurrent.pressed; }
+
+int64_t gfx_close_requested(void) {
+    if (!G.close_requested) return 0;
+    G.close_requested = 0;
+    return 1;
+}
+
+void gfx_set_close_blocked(int64_t blocked) {
+    G.close_blocked = blocked ? 1 : 0;
 }
 
 int64_t gfx_mouse_x(void) { return G.mouse_x; }
