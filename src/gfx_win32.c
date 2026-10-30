@@ -93,10 +93,15 @@ static void win32_present(const uint32_t *fb, int64_t fb_width, int64_t x, int64
                           int64_t w, int64_t h) {
     /* The DIB is canvas_w pixels wide, so fb_width must match it. */
     (void)fb_width;
+    (void)x; (void)y; (void)w; (void)h;
     fb_ptr = fb;
+    /* The whole canvas is sent, not just the dirty rectangle. StretchDIBits with a
+     * non-zero source origin on this top-down DIB draws the rows at the wrong
+     * vertical position (observed: a block at y=160 appears at y=150, and a block
+     * that ends at the bottom edge is cut short). Using origin (0,0) avoids that. */
     HDC dc = GetDC(hwnd);
-    StretchDIBits(dc, (int)x, (int)y, (int)w, (int)h,
-                  (int)x, (int)y, (int)w, (int)h,
+    StretchDIBits(dc, 0, 0, (int)canvas_w, (int)canvas_h,
+                  0, 0, (int)canvas_w, (int)canvas_h,
                   fb, &bmi, DIB_RGB_COLORS, SRCCOPY);
     ReleaseDC(hwnd, dc);
 }
