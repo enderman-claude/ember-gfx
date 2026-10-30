@@ -52,8 +52,25 @@ static LRESULT CALLBACK gfx_wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
             return 0;
         }
         case WM_CLOSE:
-            DestroyWindow(h);
+            /* The close button and Alt+F4 both arrive here. Report the request, then
+             * close unless the program has blocked closing to ask the user first. */
+            gfx_input_close_request();
+            if (!gfx_close_is_blocked()) {
+                DestroyWindow(h);
+            }
             return 0;
+        case WM_KEYDOWN:
+        case WM_KEYUP:
+            /* wParam is the virtual-key code, which is the library's key numbering.
+             * Repeats are filtered in the core. */
+            gfx_input_key((int)(wp & 0xFF), msg == WM_KEYDOWN);
+            return 0;
+        case WM_SYSKEYDOWN:
+        case WM_SYSKEYUP:
+            /* Alt and F10 combinations are system keys. Record them, then pass them on
+             * so Alt+F4 still closes the window. */
+            gfx_input_key((int)(wp & 0xFF), msg == WM_SYSKEYDOWN);
+            return DefWindowProcA(h, msg, wp, lp);
         case WM_DESTROY:
             closed_flag = 1;
             PostQuitMessage(0);

@@ -6,7 +6,7 @@
  *
  * Backends (chosen by gfx_open):
  *   x11   Linux with an X server (DISPLAY set). Uses MIT-SHM when available.
- *   win32 Windows. Uses StretchDIBits on the dirty region.
+ *   win32 Windows. Uses StretchDIBits on the whole canvas.
  *   null  No screen. Used when nothing else is available, and by the tests.
  *         Force it with the environment variable GFX_BACKEND=null.
  *
@@ -63,9 +63,32 @@ int64_t gfx_click_button(void);
 int64_t gfx_click_x(void);
 int64_t gfx_click_y(void);
 
+/* Keyboard input. Keys use Win32 virtual-key codes, so they are the same on every
+ * backend: letters and digits are their uppercase ASCII codes ('A' = 65, '0' = 48).
+ * Other keys: Backspace 8, Tab 9, Enter 13, Shift 16, Ctrl 17, Alt 18, Esc 27,
+ * Space 32, Left 37, Up 38, Right 39, Down 40.
+ *
+ * gfx_key_down(key) is 1 while the key is held. Presses and releases are queued
+ * like clicks: gfx_poll_key() takes the oldest event and makes it current, then
+ * gfx_key_code() and gfx_key_pressed() (1 = press, 0 = release) describe it. Holding
+ * a key does not queue repeats. The queue holds 64 events. */
+int64_t gfx_key_down(int64_t key);
+int64_t gfx_poll_key(void);
+int64_t gfx_key_code(void);
+int64_t gfx_key_pressed(void);
+
+/* Close button. Each click on the close button (or Alt+F4) is an event:
+ * gfx_close_requested() returns 1 once for each such request, then clears it.
+ * By default the window closes on its own, and gfx_closed() becomes 1.
+ * gfx_set_close_blocked(1) stops the window closing when the button is pressed, so the
+ * program can ask the user first and then call gfx_close() itself. gfx_closed() stays 0
+ * until gfx_close() is called. */
+int64_t gfx_close_requested(void);
+void gfx_set_close_blocked(int64_t blocked);
+
 /* Shows everything drawn since the last present, and processes window events. */
 void gfx_present(void);
-/* 1 once the user has closed the window. */
+/* 1 once the window has been closed, by the user or by gfx_close(). */
 int64_t gfx_closed(void);
 /* Total pixels sent to the screen by gfx_present. Used to test the dirty-rectangle logic. */
 int64_t gfx_pixels_presented(void);

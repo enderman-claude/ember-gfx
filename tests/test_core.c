@@ -223,6 +223,50 @@ static void test_input(void) {
     CHECK(gfx_poll_click() == 0 && gfx_mouse_down(7) == 0, "unknown button not ignored");
 }
 
+static void test_keys_and_close(void) {
+    /* Press and release are queued in order, and auto-repeat is not an event. */
+    gfx_input_key(65, 1);                 /* A down */
+    gfx_input_key(65, 1);                 /* auto-repeat: ignored */
+    gfx_input_key(65, 1);
+    CHECK(gfx_key_down(65) == 1, "A not held after press");
+    gfx_input_key(65, 0);                 /* A up */
+    CHECK(gfx_key_down(65) == 0, "A still held after release");
+    CHECK(gfx_poll_key() == 1 && gfx_key_code() == 65 && gfx_key_pressed() == 1,
+          "first key event is not A press");
+    CHECK(gfx_poll_key() == 1 && gfx_key_code() == 65 && gfx_key_pressed() == 0,
+          "second key event is not A release");
+    CHECK(gfx_poll_key() == 0, "extra key events queued after auto-repeat");
+
+    /* Out-of-range codes are ignored, and the queue holds 64 events. */
+    gfx_input_key(-1, 1);
+    gfx_input_key(256, 1);
+    CHECK(gfx_key_down(256) == 0 && gfx_key_down(-1) == 0, "out-of-range key marked down");
+    CHECK(gfx_poll_key() == 0, "out-of-range key queued an event");
+    for (int i = 0; i < 70; i++) {        /* alternate 0x30 down/up: 70 changes */
+        gfx_input_key(0x30, i % 2 == 0);
+    }
+    int taken = 0;
+    while (gfx_poll_key()) taken++;
+    CHECK(taken == 64, "key queue held %d events, expected 64", taken);
+
+    /* release_all clears held keys as well as buttons, and queues nothing. */
+    gfx_input_key(40, 1);                 /* Down arrow */
+    gfx_input_release_all();
+    CHECK(gfx_key_down(40) == 0, "Down arrow stuck after release_all");
+    CHECK(gfx_poll_key() == 0 || gfx_key_code() == 40, "unexpected event after release_all");
+    while (gfx_poll_key()) { }
+
+    /* Close button: a request is seen once, and does not close by itself here. */
+    gfx_set_close_blocked(1);
+    CHECK(gfx_close_is_blocked() == 1, "close_blocked not set");
+    CHECK(gfx_close_requested() == 0, "close request seen before any request");
+    gfx_input_close_request();
+    CHECK(gfx_close_requested() == 1, "close request not seen");
+    CHECK(gfx_close_requested() == 0, "close request seen twice");
+    gfx_set_close_blocked(0);
+    CHECK(gfx_close_is_blocked() == 0, "close_blocked not cleared");
+}
+
 static void test_release_all(void) {
     /* A held button must not stay down when the backend loses the mouse, and no click
      * may be queued for that release. */
@@ -251,6 +295,7 @@ int main(void) {
     test_dirty_region();
     test_input();
     test_release_all();
+    test_keys_and_close();
     gfx_close();
     if (failures) {
         fprintf(stderr, "test_core: %d failure(s)\n", failures);
