@@ -5,6 +5,7 @@
 #   make demo       build the Ember demo programs (needs the Ember compiler)
 #   make arm-check  compile every source for AArch64 (needs the GNU cross compiler)
 #   make arm-test   run the headless tests and the Ember self-test on AArch64
+#   make win-arm-check   compile the Win32 backend for Windows ARM64 (llvm-mingw)
 #
 # Set EMBER_REPO to the path of an Ember checkout (default ../ember).
 
@@ -122,6 +123,24 @@ tesseraos-check:
 	$(CC) -std=c11 -Wall -Wextra -Werror -Iinclude -Isrc -c src/gfx_tesseraos.c -o /dev/null
 	@echo "tesseraos-check: tesseraOS stub compiles"
 
+# Windows on ARM64: compile-check the same sources for AArch64 with llvm-mingw
+# (aarch64-w64-mingw32-gcc), and build the mouse demo as an ARM64 .exe.
+WIN_ARM_CC ?= aarch64-w64-mingw32-gcc
+WIN_ARM_CFLAGS := -std=c11 -O2 -Wall -Wextra -Werror -Iinclude -Isrc
+
+win-arm-check:
+	$(WIN_ARM_CC) $(WIN_ARM_CFLAGS) -c src/gfx_core.c -o /dev/null
+	$(WIN_ARM_CC) $(WIN_ARM_CFLAGS) -c src/gfx_null.c -o /dev/null
+	$(WIN_ARM_CC) $(WIN_ARM_CFLAGS) -c src/gfx_win32.c -o /dev/null
+	@echo "win-arm-check: Windows ARM64 backend compiles"
+
+$(BUILD)/click_test_arm64.exe: demo/click_test.em src/gfx_core.c src/gfx_null.c src/gfx_win32.c include/ember_gfx.h | $(BUILD)
+	EMBER_ARM64_WIN_CC=$(WIN_ARM_CC) $(EMBER) build demo/click_test.em --target windows-arm64 -o $@ \
+	  --link=src/gfx_core.c --link=src/gfx_null.c --link=src/gfx_win32.c \
+	  --link=-Iinclude --link=-Isrc
+
+click-test-arm64-exe: $(BUILD)/click_test_arm64.exe
+
 # Windows: compile-check the backend and core with MinGW (does not link or run).
 win-check:
 	x86_64-w64-mingw32-gcc -std=c11 -Wall -Wextra -Werror -Iinclude -Isrc \
@@ -182,4 +201,4 @@ arm-test: $(ARM_BUILD)/test_core $(ARM_BUILD)/selftest
 	@echo "== selftest (AArch64, Ember --target linux-arm64)"
 	$(ARM_RUN) ./$(ARM_BUILD)/selftest | diff - demo/selftest.expect && echo "selftest (AArch64): output matches"
 
-.PHONY: all test test-x11 test-x11-16 demo win-check tesseraos-check click-test click-test-exe e2e-click arm-check arm-test clean
+.PHONY: all test test-x11 test-x11-16 demo win-check win-arm-check click-test-arm64-exe tesseraos-check click-test click-test-exe e2e-click arm-check arm-test clean
