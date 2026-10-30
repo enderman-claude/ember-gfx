@@ -12,6 +12,7 @@
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <X11/extensions/XTest.h>
+#include <X11/keysym.h>
 
 #include "ember_gfx.h"
 #include "gfx_internal.h"
@@ -148,6 +149,53 @@ int main(void) {
     CHECK(gfx_poll_click() == 0, "click outside the window was received");
     CHECK(gfx_mouse_x() == 40 && gfx_mouse_y() == 10, "mouse position %lld,%lld, want 40,10",
           (long long)gfx_mouse_x(), (long long)gfx_mouse_y());
+
+    /* Typed text through XTest. Keystrokes go to the window under the pointer (there is
+     * no window manager here), so move the pointer inside the window first. */
+    XTestFakeMotionEvent(reader, -1, 20, 20, CurrentTime);
+    XFlush(reader);
+    gfx_sleep_ms(100);
+    gfx_present();
+    KeyCode kshift = XKeysymToKeycode(reader, XK_Shift_L);
+    KeyCode ka = XKeysymToKeycode(reader, XK_a);
+    KeyCode kb = XKeysymToKeycode(reader, XK_b);
+    XTestFakeKeyEvent(reader, kshift, True, CurrentTime);
+    XTestFakeKeyEvent(reader, ka, True, CurrentTime);
+    XTestFakeKeyEvent(reader, ka, False, CurrentTime);
+    XTestFakeKeyEvent(reader, kshift, False, CurrentTime);
+    XTestFakeKeyEvent(reader, kb, True, CurrentTime);
+    XTestFakeKeyEvent(reader, kb, False, CurrentTime);
+    XFlush(reader);
+    gfx_sleep_ms(300);
+    gfx_present();
+    gfx_present();
+    CHECK(gfx_poll_char() == 1 && gfx_char_code() == 'A', "Shift+a did not type 'A'");
+    CHECK(gfx_poll_char() == 1 && gfx_char_code() == 'b', "b did not type 'b'");
+    CHECK(gfx_poll_char() == 0, "extra characters were typed");
+
+    /* Covering the window must not lose the picture: the backend redraws on Expose.
+     * The server discards the contents while another window covers them. */
+    gfx_clear(0x123456);
+    gfx_present();
+    gfx_sleep_ms(100);
+    Window cover = XCreateSimpleWindow(reader, RootWindow(reader, scr), 0, 0, w, h, 0, 0, 0);
+    XMapRaised(reader, cover);
+    XSync(reader, False);
+    gfx_sleep_ms(100);
+    gfx_present();
+    XDestroyWindow(reader, cover);
+    XSync(reader, False);
+    gfx_sleep_ms(200);
+    gfx_present();
+    gfx_sleep_ms(100);
+    gfx_present();
+    XImage *shot3 = XGetImage(reader, RootWindow(reader, scr), 0, 0, w, h, AllPlanes, ZPixmap);
+    if (shot3 != NULL) {
+        unsigned long got = XGetPixel(shot3, 8, 8);
+        unsigned long want_px = expected_pixel(0x123456, rm, gm, bm);
+        CHECK(got == want_px, "picture lost after being covered: got 0x%lx, want 0x%lx", got, want_px);
+        XDestroyImage(shot3);
+    }
 
     XDestroyImage(shot);
     XCloseDisplay(reader);

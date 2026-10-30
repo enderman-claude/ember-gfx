@@ -94,8 +94,18 @@ Left 37, Up 38, Right 39, Down 40.
 queued like clicks: `gfx_poll_key()` takes the oldest event, and `gfx_key_code()` and
 `gfx_key_pressed()` (1 = press, 0 = release) describe it. Auto-repeat is not an event.
 
-Text entry (characters after shift and layout) is not provided yet; the codes are physical
-keys, so `'A'` is the key labelled A on a US layout.
+## Typed text
+
+```python
+extern def gfx_poll_char() -> i64
+extern def gfx_char_code() -> i64
+```
+
+Typed characters are a separate queue, because they depend on the layout and Shift: Shift+a
+gives `'A'`, and the key codes above give the physical key. `gfx_poll_char()` takes the oldest
+character and `gfx_char_code()` returns it. Holding a key repeats the character, as in a text
+field. Only printable ASCII (0x20 to 0x7E) is queued; other Unicode characters are dropped for
+now. The queue holds 64 characters.
 
 ## Close button
 
@@ -148,7 +158,12 @@ int main(void) {
 | `gfx_line(x0, y0, x1, y1)` | One-pixel line, both ends included. |
 | `gfx_get_pixel(x, y)` | Reads a pixel back, or -1 if it is off the canvas. |
 | `gfx_present()` | Shows the changes since the last call and processes window events. |
-| `gfx_closed()` | 1 once the user has closed the window. |
+| `gfx_closed()` | 1 once the window has closed, whether the user or the program closed it. |
+| `gfx_key_down(k)` | 1 while the key with Win32 code `k` is held. |
+| `gfx_poll_key()`, `gfx_key_code()`, `gfx_key_pressed()` | Key press and release events, oldest first. |
+| `gfx_poll_char()`, `gfx_char_code()` | Typed printable characters, oldest first. |
+| `gfx_close_requested()` | 1 once per press of the close button (or Alt+F4). |
+| `gfx_set_close_blocked(on)` | 1 keeps the window open when its close button is pressed. |
 | `gfx_pixels_presented()` | Pixels sent to the screen so far. Used to test the dirty-rectangle logic. |
 | `gfx_sleep_ms(ms)` | Sleeps. |
 
@@ -159,9 +174,9 @@ only the region that changed.
 
 | Backend | Selected when | Notes |
 |---|---|---|
-| `x11-shm` | Linux, `DISPLAY` set, MIT-SHM available | Shared-memory image. Only the dirty rectangle is sent. The server copy is waited for before the next frame writes. |
-| `x11-xput` | As above, but `GFX_X11_NO_SHM=1` is set or MIT-SHM is missing | `XPutImage` of the dirty rectangle. |
-| `win32` | Windows | `StretchDIBits` of the dirty rectangle. The framebuffer is already in the DIB's pixel format. |
+| `x11-shm` | Linux, `DISPLAY` set, MIT-SHM available | Shared-memory image. Only the dirty rectangle is sent. The server copy is waited for before the next frame writes. When another window covers this one, the whole canvas is redrawn on Expose. |
+| `x11-xput` | As above, but `GFX_X11_NO_SHM=1` is set or MIT-SHM is missing | `XPutImage` of the dirty rectangle, with the same Expose redraw. |
+| `win32` | Windows | `StretchDIBits` of the whole canvas, redrawn on `WM_PAINT`. Partial rectangles draw at the wrong vertical position under the top-down DIB, so the whole canvas is sent. |
 | `null` | Anything else, or `GFX_BACKEND=null` | Canvas in memory only. Used by the tests and on headless servers. |
 
 X11 handles any true-colour visual. The framebuffer is copied row by row when the server uses
@@ -170,8 +185,9 @@ big-endian servers, are converted per pixel. The 16-bit path is tested.
 
 ## Optimisations
 
-- **Dirty rectangle** (all backends): `gfx_present` sends the bounding box of everything
-  drawn since the last present. A changed pixel costs one pixel, not a full frame.
+- **Dirty rectangle** (X11): `gfx_present` sends the bounding box of everything drawn since
+  the last present. A changed pixel costs one pixel, not a full frame. Win32 sends the whole
+  canvas each time, which avoids the offset problem described above.
 - **Shared memory** (X11): the image lives in shared memory, so frames don't go through the
   socket.
 - **Row copy** (X11): one `memcpy` per row in the common pixel format.
@@ -220,11 +236,18 @@ What the tests cover:
   and a 16-bit display.
 - `e2e-click`: runs `click_test` on Xvfb, sends real pointer clicks, and checks the dots
   and bars on screen.
+- Also in `test_x11`: typed text through XTest (Shift+a gives `'A'`), and a redraw after the
+  window is covered by another window and uncovered. Without the Expose redraw this check
+  fails, which was confirmed.
+- `test_core` also covers the key queue (repeat filtering and the 64-event limit), held-key
+  state, the close-button flags and the character queue.
+- Win32 keyboard, text and close input were checked by running the Windows build under Wine
+  with `xdotool`. This is not a substitute for running on Windows.
 
 ## Limits
 
-- Immediate mode with one window. No text, images, alpha blending or input other than the
-  close button.
+- Immediate mode with one window. No images, alpha blending, or text drawing (typed input is
+  queued, but nothing draws glyphs). Typed characters are printable ASCII only.
 - Coordinates and sizes are `int64_t`, but the canvas is limited to 8192 x 8192 pixels.
   Circle radii above 2^20 are clamped; the picture does not change for any centre near the canvas.
 - The Win32 backend is compile-checked with MinGW but has not been run on Windows

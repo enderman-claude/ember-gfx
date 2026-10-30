@@ -77,6 +77,14 @@ int64_t gfx_poll_key(void);
 int64_t gfx_key_code(void);
 int64_t gfx_key_pressed(void);
 
+/* Typed text. Printable ASCII characters (0x20..0x7E) are queued separately from keys,
+ * after the layout and Shift have been applied: Shift+a gives 'A'. Auto-repeat produces
+ * repeated characters, as it does in a text field. Other Unicode characters are not
+ * queued yet. gfx_poll_char() takes the oldest character and makes it current, and
+ * gfx_char_code() returns it. The queue holds 64 characters. */
+int64_t gfx_poll_char(void);
+int64_t gfx_char_code(void);
+
 /* Close button. Each click on the close button (or Alt+F4) is an event:
  * gfx_close_requested() returns 1 once for each such request, then clears it.
  * By default the window closes on its own, and gfx_closed() becomes 1.

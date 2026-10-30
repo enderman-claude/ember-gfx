@@ -33,6 +33,8 @@ void gfx_input_button(int button, int pressed, int64_t x, int64_t y);
 void gfx_input_release_all(void);
 /* Keyboard. key is a Win32 virtual-key code (0..255); pressed is 1 or 0. */
 void gfx_input_key(int key, int pressed);
+/* A typed printable character (0x20..0x7E). Other values are ignored. */
+void gfx_input_char(int c);
 /* The window's close button was pressed. The backend then closes the window unless
  * gfx_close_is_blocked() returns 1. */
 void gfx_input_close_request(void);

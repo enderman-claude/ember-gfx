@@ -65,6 +65,11 @@ static LRESULT CALLBACK gfx_wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
              * Repeats are filtered in the core. */
             gfx_input_key((int)(wp & 0xFF), msg == WM_KEYDOWN);
             return 0;
+        case WM_CHAR:
+            /* wParam is the character after layout and Shift. Auto-repeat sends it again,
+             * as a text field does. */
+            gfx_input_char((int)(wp & 0xFFFF));
+            return 0;
         case WM_SYSKEYDOWN:
         case WM_SYSKEYUP:
             /* Alt and F10 combinations are system keys. Record them, then pass them on

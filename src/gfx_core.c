@@ -35,6 +35,7 @@
 
 #define GFX_KEYS 256
 #define GFX_KEY_QUEUE 64
+#define GFX_CHAR_QUEUE 64
 
 static struct {
     int open;
@@ -58,6 +59,10 @@ static struct {
     struct { int key; int pressed; } kqueue[GFX_KEY_QUEUE];
     int kq_head, kq_count;
     struct { int key; int pressed; } kcurrent;
+
+    int chars[GFX_CHAR_QUEUE];
+    int c_head, c_count;
+    int c_current;
 
     /* close button */
     int close_requested;
@@ -170,6 +175,7 @@ int64_t gfx_open(int64_t w, int64_t h) {
     G.close_requested = 0;
     G.close_blocked = 0;
     G.kq_head = G.kq_count = 0;
+    G.c_head = G.c_count = 0;
     memset(G.key_down, 0, sizeof G.key_down);
     return ok;
 }
@@ -320,6 +326,23 @@ void gfx_input_key(int key, int pressed) {
     G.kqueue[slot].pressed = p;
     G.kq_count++;
 }
+
+void gfx_input_char(int c) {
+    if (c < 0x20 || c > 0x7E) return;
+    if (G.c_count == GFX_CHAR_QUEUE) return;          /* queue full: drop the character */
+    G.chars[(G.c_head + G.c_count) % GFX_CHAR_QUEUE] = c;
+    G.c_count++;
+}
+
+int64_t gfx_poll_char(void) {
+    if (G.c_count == 0) return 0;
+    G.c_current = G.chars[G.c_head];
+    G.c_head = (G.c_head + 1) % GFX_CHAR_QUEUE;
+    G.c_count--;
+    return 1;
+}
+
+int64_t gfx_char_code(void) { return G.c_current; }
 
 void gfx_input_close_request(void) {
     G.close_requested = 1;
