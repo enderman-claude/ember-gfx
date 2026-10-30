@@ -29,5 +29,7 @@ unsigned long gfx_x11_window_id(void);
  * button: 0 = left, 1 = right, 2 = middle. Coordinates are canvas pixels. */
 void gfx_input_move(int64_t x, int64_t y);
 void gfx_input_button(int button, int pressed, int64_t x, int64_t y);
+/* Backends call this when they lose the mouse or focus, so no button stays held. */
+void gfx_input_release_all(void);
 
 #endif

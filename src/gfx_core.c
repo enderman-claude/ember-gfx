@@ -279,6 +279,15 @@ void gfx_input_button(int button, int pressed, int64_t x, int64_t y) {
     }
 }
 
+/* Called by a backend when it stops receiving button events (for example, the window
+ * lost the mouse or focus during a drag). Clears the held state so a button whose
+ * release was never seen does not stay down. No click is queued. */
+void gfx_input_release_all(void) {
+    for (int b = 0; b < GFX_BUTTONS; b++) {
+        G.down[b] = 0;
+    }
+}
+
 int64_t gfx_mouse_x(void) { return G.mouse_x; }
 int64_t gfx_mouse_y(void) { return G.mouse_y; }
 

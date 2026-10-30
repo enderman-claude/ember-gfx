@@ -223,6 +223,21 @@ static void test_input(void) {
     CHECK(gfx_poll_click() == 0 && gfx_mouse_down(7) == 0, "unknown button not ignored");
 }
 
+static void test_release_all(void) {
+    /* A held button must not stay down when the backend loses the mouse, and no click
+     * may be queued for that release. */
+    gfx_input_button(0, 1, 10, 10);
+    gfx_input_button(2, 1, 11, 11);
+    CHECK(gfx_mouse_down(0) == 1 && gfx_mouse_down(2) == 1, "buttons not held before release");
+    int64_t before = 0;
+    while (gfx_poll_click()) before++;
+    gfx_input_release_all();
+    CHECK(gfx_mouse_down(0) == 0, "left button stuck after release_all");
+    CHECK(gfx_mouse_down(2) == 0, "middle button stuck after release_all");
+    CHECK(gfx_poll_click() == 0, "release_all queued a click");
+    CHECK(before == 2, "expected 2 queued presses, got %lld", (long long)before);
+}
+
 int main(void) {
     setenv("GFX_BACKEND", "null", 1);
     test_open_close();
@@ -235,6 +250,7 @@ int main(void) {
     test_line_properties();
     test_dirty_region();
     test_input();
+    test_release_all();
     gfx_close();
     if (failures) {
         fprintf(stderr, "test_core: %d failure(s)\n", failures);
